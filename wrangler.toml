@@ -4,6 +4,7 @@ compatibility_flags = ["nodejs_compat"]
 
 [build]
 command = "npx @cloudflare/next-on-pages"
+upload_dir = ".vercel/output/static"
 
 [[d1_databases]]
 binding = "DB"
