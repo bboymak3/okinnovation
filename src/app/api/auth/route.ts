@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 
-// Simple password-based auth (stored as env variable, with a default for demo)
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "okinnovation2024";
+export const runtime = "edge";
+
+// Simple password-based auth
+const ADMIN_PASSWORD = "okinnovation2024";
 
 export async function POST(request: Request) {
   try {
@@ -15,8 +17,7 @@ export async function POST(request: Request) {
     }
 
     if (password === ADMIN_PASSWORD) {
-      // Create a simple token (in production, use JWT)
-      const token = Buffer.from(`admin:${Date.now()}`).toString("base64");
+      const token = btoa(`admin:${Date.now()}`);
       return NextResponse.json({
         success: true,
         token,

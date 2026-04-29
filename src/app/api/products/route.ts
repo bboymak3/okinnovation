@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDB } from "@/lib/db";
+
+export const runtime = "edge";
 
 export async function GET() {
   try {
-    const products = await db.product.findMany({
-      orderBy: { order: "asc" },
-    });
-    return NextResponse.json(products);
-  } catch {
+    const db = getDB();
+    const result = await db
+      .prepare("SELECT * FROM products ORDER BY \"order\" ASC")
+      .all();
+    return NextResponse.json(result.results);
+  } catch (error) {
+    console.error("Error fetching products:", error);
     return NextResponse.json(
       { error: "Error al obtener productos" },
       { status: 500 }
@@ -17,6 +21,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const db = getDB();
     const body = await request.json();
     const { name, description, price, category, image, featured, order } = body;
 
@@ -27,20 +32,28 @@ export async function POST(request: Request) {
       );
     }
 
-    const product = await db.product.create({
-      data: {
-        name,
-        description: description || "",
-        price: price || "Cotizar",
-        category: category || "Bumpers",
-        image: image || "/products/bumper.png",
-        featured: featured || false,
-        order: order || 0,
-      },
-    });
+    const id = `prod_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
-    return NextResponse.json(product, { status: 201 });
-  } catch {
+    await db.prepare(
+      `INSERT INTO products (id, name, description, price, category, image, featured, "order")
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(
+      id,
+      name,
+      description || "",
+      price || "Cotizar",
+      category || "Bumpers",
+      image || "/products/bumper.png",
+      featured ? 1 : 0,
+      order || 0
+    ).run();
+
+    return NextResponse.json(
+      { id, name, description, price, category, image, featured, order },
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error("Error creating product:", error);
     return NextResponse.json(
       { error: "Error al crear producto" },
       { status: 500 }

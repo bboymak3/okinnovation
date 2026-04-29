@@ -1,0 +1,9 @@
+name = "okinnovation"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = ".vercel/output/static"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "ok_db"
+database_id = "f4939ecd-22e5-4f7c-b2f5-8861997cb042"

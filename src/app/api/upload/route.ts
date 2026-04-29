@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
+
+export const runtime = "edge";
+
+// Cloudflare Pages doesn't have a writable filesystem.
+// We convert uploaded images to base64 data URLs that are stored in the product's image field.
+// Max file size: 1MB (becomes ~1.33MB as base64, within D1 limits).
+
+const MAX_SIZE = 1 * 1024 * 1024; // 1MB
+const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
 export async function POST(request: Request) {
   try {
@@ -11,48 +18,39 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No se subio archivo" }, { status: 400 });
     }
 
-    // Validate file type
-    const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-    if (!allowedTypes.includes(file.type)) {
+    if (!ALLOWED_TYPES.includes(file.type)) {
       return NextResponse.json(
-        { error: "Tipo de archivo no soportado. Use JPG, PNG o WebP" },
+        { error: "Tipo de archivo no soportado. Use JPG, PNG, WebP o GIF" },
         { status: 400 }
       );
     }
 
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
+    if (file.size > MAX_SIZE) {
       return NextResponse.json(
-        { error: "Archivo demasiado grande. Maximo 5MB" },
+        { error: "Archivo demasiado grande. Maximo 1MB" },
         { status: 400 }
       );
     }
 
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-
-    // Generate unique filename
-    const ext = file.name.split(".").pop() || "jpg";
-    const uniqueName = `product_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${ext}`;
-
-    // Ensure upload directory exists
-    const uploadDir = path.join(process.cwd(), "public", "uploads");
-    await mkdir(uploadDir, { recursive: true });
-
-    // Write file
-    const filePath = path.join(uploadDir, uniqueName);
-    await writeFile(filePath, buffer);
-
-    const imageUrl = `/uploads/${uniqueName}`;
+    // Convert to base64 data URL
+    const arrayBuffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const base64 = btoa(binary);
+    const dataUrl = `data:${file.type};base64,${base64}`;
 
     return NextResponse.json({
       success: true,
-      url: imageUrl,
-      message: "Imagen subida correctamente",
+      url: dataUrl,
+      message: "Imagen convertida correctamente",
     });
-  } catch {
+  } catch (error) {
+    console.error("Error uploading image:", error);
     return NextResponse.json(
-      { error: "Error al subir imagen" },
+      { error: "Error al procesar imagen" },
       { status: 500 }
     );
   }
