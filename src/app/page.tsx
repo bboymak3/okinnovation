@@ -19,6 +19,9 @@ import {
   Heart,
   Zap,
   Eye,
+  Lock,
+  LogOut,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -41,96 +44,19 @@ import {
 } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
   useCartStore,
   type Product,
-  type CartItem,
 } from "@/lib/cart-store";
+import AdminPanel from "@/components/admin-panel";
 import { motion, AnimatePresence } from "framer-motion";
-
-// ==================== PRODUCT DATA ====================
-const products: Product[] = [
-  {
-    id: "bumper-delantero",
-    name: "Bumper Delantero Off-Road",
-    description:
-      "Bumper delantero fabricado en plancha de acero con tratamiento anticorrosion. Incluye soporte para barra LED, gancho de remolque y proteccion de faros. Disponible para Toyota Hilux, Ford Ranger, Mitsubishi L200, Nissan Frontier y mas modelos.",
-    price: "Cotizar",
-    category: "Bumpers",
-    image: "/products/bumper.png",
-    featured: true,
-  },
-  {
-    id: "suspension-lift",
-    name: "Kit de Suspension Elevada",
-    description:
-      "Kit completo de suspension lift para tu 4x4. Incluye amortiguadores de gas de alta gama, resortes reforzados y bujes poliuretano. Mejora la distancia al suelo y el rendimiento off-road de tu vehiculo.",
-    price: "Cotizar",
-    category: "Suspension",
-    image: "/products/suspension.png",
-    featured: true,
-  },
-  {
-    id: "boveda-techo",
-    name: "Boveda y Trapecio de Techo",
-    description:
-      "Boveda y trapecio de techo fabricados en acero o aluminio con tratamiento anticorrosion. Soporta hasta 150kg de carga. Incluye sistema de iluminacion LED integrada y compatible con portaequipajes universales.",
-    price: "Cotizar",
-    category: "Estructuras",
-    image: "/products/techo.png",
-    featured: true,
-  },
-  {
-    id: "estribos",
-    name: "Estribos Electricos y Fijos",
-    description:
-      "Estribos electricos con motor retráctil o fijos de acero inoxidable. Superficie antideslizante, soporta hasta 200kg por lado. Instalacion profesional incluida para todos los modelos de camionetas y SUVs.",
-    price: "Cotizar",
-    category: "Estribos",
-    image: "/products/estribos.png",
-    featured: false,
-  },
-  {
-    id: "iluminacion-led",
-    name: "Kit de Iluminacion LED",
-    description:
-      "Barra LED curved de 42 pulgadas con 240W de potencia. Incluye luces de trabajo, faros auxiliares LED y luces posicionales. Certificacion IP68 resistente al agua y polvo. Luminosidad de 12000 lumenes.",
-    price: "Cotizar",
-    category: "Iluminacion",
-    image: "/products/iluminacion.png",
-    featured: true,
-  },
-  {
-    id: "proteccion-carter",
-    name: "Proteccion de Carter y Chasis",
-    description:
-      "Placas de proteccion de carter, transmision y diferencial fabricadas en acero al carbono de 4mm de espesor. Protege los componentes vitales de tu vehiculo contra rocas, obstaculos y terreno accidentado.",
-    price: "Cotizar",
-    category: "Proteccion",
-    image: "/products/proteccion.png",
-    featured: false,
-  },
-  {
-    id: "overfender",
-    name: "Overfenders y Body Kit",
-    description:
-      "Overfenders ensanchadores de guardafangos para un look mas agresivo. Fabricados en fibra de vidrio o ABS de alta resistencia. Disponible para Toyota Hilux, Ford Ranger, Mitsubishi L200, Jeep Wrangler y mas.",
-    price: "Cotizar",
-    category: "Estetica",
-    image: "/products/overfender.png",
-    featured: false,
-  },
-];
-
-const categories = [
-  "Todos",
-  "Bumpers",
-  "Suspension",
-  "Estructuras",
-  "Estribos",
-  "Iluminacion",
-  "Proteccion",
-  "Estetica",
-];
 
 // ==================== ANIMATION VARIANTS ====================
 const fadeInUp = {
@@ -146,6 +72,17 @@ const staggerContainer = {
   viewport: { once: true },
 };
 
+const CATEGORIES = [
+  "Todos",
+  "Bumpers",
+  "Suspension",
+  "Estructuras",
+  "Estribos",
+  "Iluminacion",
+  "Proteccion",
+  "Estetica",
+];
+
 // ==================== MAIN PAGE ====================
 export default function Home() {
   const [activeCategory, setActiveCategory] = useState("Todos");
@@ -157,9 +94,19 @@ export default function Home() {
     vehiculo: "",
     mensaje: "",
   });
-  const [contactSent, setContactSent] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showProductModal, setShowProductModal] = useState(false);
+
+  // Products from DB
+  const [products, setProducts] = useState<Product[]>([]);
+  const [productsLoading, setProductsLoading] = useState(true);
+
+  // Admin state
+  const [showAdmin, setShowAdmin] = useState(false);
+  const [showLoginDialog, setShowLoginDialog] = useState(false);
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
 
   const {
     items,
@@ -171,6 +118,40 @@ export default function Home() {
     setCartOpen,
   } = useCartStore();
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
+
+  // Fetch products from database
+  const fetchProducts = async () => {
+    try {
+      const res = await fetch("/api/products");
+      if (res.ok) {
+        const data = await res.json();
+        setProducts(data);
+      }
+    } catch (err) {
+      console.error("Error fetching products:", err);
+    } finally {
+      setProductsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchProducts();
+  }, []);
+
+  // Check if already logged in
+  useEffect(() => {
+    const token = localStorage.getItem("okinnovation_admin_token");
+    if (token) {
+      setShowAdmin(true);
+    }
+  }, []);
+
+  // Dynamic categories from products
+  const dbCategories = [
+    "Todos",
+    ...Array.from(new Set(products.map((p) => p.category))).sort(),
+  ];
+  const categoriesToUse = dbCategories.length > 1 ? dbCategories : CATEGORIES;
 
   const filteredProducts =
     activeCategory === "Todos"
@@ -194,10 +175,11 @@ export default function Home() {
   };
 
   const handleSendMessage = () => {
-    const message = items.length > 0
-      ? `Hola OKINNOVATION! Me interesa cotizar los siguientes productos:\n\n${items.map(i => `- ${i.name} (x${i.quantity})`).join("\n")}\n\nMi nombre: ${formData.nombre || ""}\nTelefono: ${formData.telefono || ""}\nVehiculo: ${formData.vehiculo || ""}\nMensaje: ${formData.mensaje || ""}`
-      : `Hola OKINNOVATION! Me gustaria obtener informacion.\n\nNombre: ${formData.nombre || ""}\nTelefono: ${formData.telefono || ""}\nVehiculo: ${formData.vehiculo || ""}\nMensaje: ${formData.mensaje || ""}`;
-    
+    const message =
+      items.length > 0
+        ? `Hola OKINNOVATION! Me interesa cotizar los siguientes productos:\n\n${items.map((i) => `- ${i.name} (x${i.quantity})`).join("\n")}\n\nMi nombre: ${formData.nombre || ""}\nTelefono: ${formData.telefono || ""}\nVehiculo: ${formData.vehiculo || ""}\nMensaje: ${formData.mensaje || ""}`
+        : `Hola OKINNOVATION! Me gustaria obtener informacion.\n\nNombre: ${formData.nombre || ""}\nTelefono: ${formData.telefono || ""}\nVehiculo: ${formData.vehiculo || ""}\nMensaje: ${formData.mensaje || ""}`;
+
     window.open(
       `https://wa.me/51918286293?text=${encodeURIComponent(message)}`,
       "_blank"
@@ -213,6 +195,43 @@ export default function Home() {
     addItem(product);
   };
 
+  const handleLogin = async () => {
+    setLoginError("");
+    setLoginLoading(true);
+    try {
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: loginPassword }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        localStorage.setItem("okinnovation_admin_token", data.token);
+        setShowAdmin(true);
+        setShowLoginDialog(false);
+        setLoginPassword("");
+      } else {
+        setLoginError(data.error || "Contrasena incorrecta");
+      }
+    } catch {
+      setLoginError("Error de conexion");
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("okinnovation_admin_token");
+    setShowAdmin(false);
+    fetchProducts();
+  };
+
+  // ==================== ADMIN VIEW ====================
+  if (showAdmin) {
+    return <AdminPanel onLogout={handleLogout} />;
+  }
+
+  // ==================== STORE VIEW ====================
   return (
     <div className="min-h-screen flex flex-col bg-background">
       {/* ==================== HEADER ==================== */}
@@ -267,14 +286,21 @@ export default function Home() {
                   </Badge>
                 )}
               </Button>
+              {/* Admin Login Button */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-muted-foreground"
+                onClick={() => setShowLoginDialog(true)}
+                title="Admin"
+              >
+                <Lock className="h-4 w-4" />
+              </Button>
               <Button
                 size="sm"
                 className="hidden sm:flex bg-orange-600 hover:bg-orange-700 text-white"
                 onClick={() =>
-                  window.open(
-                    "https://wa.me/51918286293",
-                    "_blank"
-                  )
+                  window.open("https://wa.me/51918286293", "_blank")
                 }
               >
                 <MessageCircle className="h-4 w-4 mr-2" />
@@ -324,10 +350,7 @@ export default function Home() {
                   size="sm"
                   className="w-full mt-2 bg-orange-600 hover:bg-orange-700 text-white"
                   onClick={() =>
-                    window.open(
-                      "https://wa.me/51918286293",
-                      "_blank"
-                    )
+                    window.open("https://wa.me/51918286293", "_blank")
                   }
                 >
                   <MessageCircle className="h-4 w-4 mr-2" />
@@ -454,7 +477,10 @@ export default function Home() {
       <section id="productos" className="py-16 sm:py-24">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <motion.div {...fadeInUp} className="text-center mb-12">
-            <Badge variant="outline" className="mb-4 border-orange-600 text-orange-600">
+            <Badge
+              variant="outline"
+              className="mb-4 border-orange-600 text-orange-600"
+            >
               <Zap className="h-3 w-3 mr-1" />
               Nuestros Productos
             </Badge>
@@ -474,7 +500,7 @@ export default function Home() {
             {...fadeInUp}
             className="flex flex-wrap justify-center gap-2 mb-10"
           >
-            {categories.map((cat) => (
+            {categoriesToUse.map((cat) => (
               <Button
                 key={cat}
                 variant={activeCategory === cat ? "default" : "outline"}
@@ -492,90 +518,100 @@ export default function Home() {
           </motion.div>
 
           {/* Product Grid */}
-          <motion.div
-            {...staggerContainer}
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
-          >
-            <AnimatePresence mode="popLayout">
-              {filteredProducts.map((product) => (
-                <motion.div
-                  key={product.id}
-                  layout
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  transition={{ duration: 0.3 }}
-                >
-                  <Card className="group overflow-hidden border-border hover:border-orange-300 hover:shadow-xl hover:shadow-orange-500/10 transition-all duration-300 cursor-pointer h-full flex flex-col">
-                    <div
-                      className="relative overflow-hidden aspect-square bg-muted"
-                      onClick={() => handleProductClick(product)}
-                    >
-                      <img
-                        src={product.image}
-                        alt={product.name}
-                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                      />
-                      {product.featured && (
-                        <Badge className="absolute top-3 left-3 bg-orange-600 text-white">
-                          <Star className="h-3 w-3 mr-1" />
-                          Destacado
-                        </Badge>
-                      )}
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-300 flex items-center justify-center">
-                        <motion.div
-                          initial={{ opacity: 0, scale: 0.5 }}
-                          whileHover={{ opacity: 1, scale: 1 }}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                        >
-                          <Eye className="h-8 w-8 text-white" />
-                        </motion.div>
-                      </div>
-                    </div>
-                    <CardHeader className="pb-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <Badge variant="secondary" className="mb-2 text-xs">
-                            {product.category}
+          {productsLoading ? (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="h-10 w-10 animate-spin text-orange-600" />
+            </div>
+          ) : filteredProducts.length === 0 ? (
+            <div className="text-center py-20 text-muted-foreground">
+              <p className="text-lg">No hay productos en esta categoria.</p>
+            </div>
+          ) : (
+            <motion.div
+              {...staggerContainer}
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
+            >
+              <AnimatePresence mode="popLayout">
+                {filteredProducts.map((product) => (
+                  <motion.div
+                    key={product.id}
+                    layout
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    transition={{ duration: 0.3 }}
+                  >
+                    <Card className="group overflow-hidden border-border hover:border-orange-300 hover:shadow-xl hover:shadow-orange-500/10 transition-all duration-300 cursor-pointer h-full flex flex-col">
+                      <div
+                        className="relative overflow-hidden aspect-square bg-muted"
+                        onClick={() => handleProductClick(product)}
+                      >
+                        <img
+                          src={product.image}
+                          alt={product.name}
+                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                        />
+                        {product.featured && (
+                          <Badge className="absolute top-3 left-3 bg-orange-600 text-white">
+                            <Star className="h-3 w-3 mr-1" />
+                            Destacado
                           </Badge>
-                          <CardTitle className="text-lg leading-snug">
-                            {product.name}
-                          </CardTitle>
+                        )}
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-300 flex items-center justify-center">
+                          <motion.div
+                            initial={{ opacity: 0, scale: 0.5 }}
+                            whileHover={{ opacity: 1, scale: 1 }}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                          >
+                            <Eye className="h-8 w-8 text-white" />
+                          </motion.div>
                         </div>
-                        <Heart className="h-5 w-5 text-muted-foreground hover:text-red-500 transition-colors shrink-0 mt-1" />
                       </div>
-                    </CardHeader>
-                    <CardContent className="flex-1">
-                      <CardDescription className="line-clamp-2 text-sm">
-                        {product.description}
-                      </CardDescription>
-                    </CardContent>
-                    <CardFooter className="flex gap-2 pt-3 border-t">
-                      <Button
-                        className="flex-1 bg-orange-600 hover:bg-orange-700 text-white"
-                        onClick={() => handleAddToCart(product)}
-                      >
-                        <ShoppingCart className="h-4 w-4 mr-2" />
-                        {product.price}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => {
-                          window.open(
-                            `https://wa.me/51918286293?text=Hola! Me interesa cotizar: ${encodeURIComponent(product.name)}`,
-                            "_blank"
-                          );
-                        }}
-                      >
-                        <MessageCircle className="h-4 w-4" />
-                      </Button>
-                    </CardFooter>
-                  </Card>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </motion.div>
+                      <CardHeader className="pb-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <Badge variant="secondary" className="mb-2 text-xs">
+                              {product.category}
+                            </Badge>
+                            <CardTitle className="text-lg leading-snug">
+                              {product.name}
+                            </CardTitle>
+                          </div>
+                          <Heart className="h-5 w-5 text-muted-foreground hover:text-red-500 transition-colors shrink-0 mt-1" />
+                        </div>
+                      </CardHeader>
+                      <CardContent className="flex-1">
+                        <CardDescription className="line-clamp-2 text-sm">
+                          {product.description}
+                        </CardDescription>
+                      </CardContent>
+                      <CardFooter className="flex gap-2 pt-3 border-t">
+                        <Button
+                          className="flex-1 bg-orange-600 hover:bg-orange-700 text-white"
+                          onClick={() => handleAddToCart(product)}
+                        >
+                          <ShoppingCart className="h-4 w-4 mr-2" />
+                          {product.price}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => {
+                            window.open(
+                              `https://wa.me/51918286293?text=Hola! Me interesa cotizar: ${encodeURIComponent(product.name)}`,
+                              "_blank"
+                            );
+                          }}
+                        >
+                          <MessageCircle className="h-4 w-4" />
+                        </Button>
+                      </CardFooter>
+                    </Card>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </motion.div>
+          )}
         </div>
       </section>
 
@@ -596,16 +632,26 @@ export default function Home() {
                       <div className="text-3xl font-black text-orange-500">
                         5+
                       </div>
-                      <div className="text-xs text-gray-300">Anos de experiencia</div>
+                      <div className="text-xs text-gray-300">
+                        Anos de experiencia
+                      </div>
                     </div>
-                    <Separator orientation="vertical" className="h-12 bg-white/30" />
+                    <Separator
+                      orientation="vertical"
+                      className="h-12 bg-white/30"
+                    />
                     <div className="text-center">
                       <div className="text-3xl font-black text-orange-500">
                         500+
                       </div>
-                      <div className="text-xs text-gray-300">Proyectos realizados</div>
+                      <div className="text-xs text-gray-300">
+                        Proyectos realizados
+                      </div>
                     </div>
-                    <Separator orientation="vertical" className="h-12 bg-white/30" />
+                    <Separator
+                      orientation="vertical"
+                      className="h-12 bg-white/30"
+                    />
                     <div className="text-center">
                       <div className="text-3xl font-black text-orange-500">
                         6.4K
@@ -617,7 +663,10 @@ export default function Home() {
               </div>
             </motion.div>
             <motion.div {...fadeInUp} className="space-y-6">
-              <Badge variant="outline" className="border-orange-600 text-orange-600">
+              <Badge
+                variant="outline"
+                className="border-orange-600 text-orange-600"
+              >
                 Sobre Nosotros
               </Badge>
               <h2 className="text-3xl sm:text-4xl font-black tracking-tight">
@@ -625,19 +674,20 @@ export default function Home() {
                 <span className="text-orange-600">OKINNOVATION PE</span>
               </h2>
               <p className="text-muted-foreground text-lg leading-relaxed">
-                Somos un taller especializado en la fabricacion y personalizacion
-                de accesorios off-road para vehiculos 4x4. Con mas de 5 anos de
-                experiencia en el mercado peruano, nos hemos convertido en una
-                referencia para los amantes del off-road que buscan calidad,
-                diseno y durabilidad.
+                Somos un taller especializado en la fabricacion y
+                personalizacion de accesorios off-road para vehiculos 4x4. Con
+                mas de 5 anos de experiencia en el mercado peruano, nos hemos
+                convertido en una referencia para los amantes del off-road que
+                buscan calidad, diseno y durabilidad.
               </p>
               <p className="text-muted-foreground leading-relaxed">
-                Nuestro equipo de profesionales altamente capacitados trabaja con
-                materiales de primera calidad para crear productos que no solo se
-                ven increibles, sino que tambien resisten las condiciones mas
-                exigentes del terreno off-road. Cada proyecto es tratado con la
-                misma dedicacion y atencion al detalle, asegurando resultados que
-                superan las expectativas de nuestros clientes.
+                Nuestro equipo de profesionales altamente capacitados trabaja
+                con materiales de primera calidad para crear productos que no
+                solo se ven increibles, sino que tambien resisten las
+                condiciones mas exigentes del terreno off-road. Cada proyecto es
+                tratado con la misma dedicacion y atencion al detalle,
+                asegurando resultados que superan las expectativas de nuestros
+                clientes.
               </p>
               <div className="grid grid-cols-2 gap-4 pt-4">
                 <div className="flex items-start gap-3">
@@ -645,7 +695,9 @@ export default function Home() {
                     <Wrench className="h-5 w-5 text-orange-600" />
                   </div>
                   <div>
-                    <h4 className="font-semibold text-sm">Fabricacion Artesanal</h4>
+                    <h4 className="font-semibold text-sm">
+                      Fabricacion Artesanal
+                    </h4>
                     <p className="text-muted-foreground text-xs">
                       Cada pieza hecha a mano con precision
                     </p>
@@ -796,10 +848,7 @@ export default function Home() {
                     variant="outline"
                     className="w-full hover:bg-orange-50 hover:border-orange-600 hover:text-orange-600"
                     onClick={() =>
-                      window.open(
-                        "https://wa.me/51918286293",
-                        "_blank"
-                      )
+                      window.open("https://wa.me/51918286293", "_blank")
                     }
                   >
                     <MessageCircle className="h-4 w-4 mr-2" />
@@ -816,19 +865,21 @@ export default function Home() {
       <section id="contacto" className="py-16 sm:py-24 bg-muted/50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <motion.div {...fadeInUp} className="text-center mb-12">
-            <Badge variant="outline" className="mb-4 border-orange-600 text-orange-600">
+            <Badge
+              variant="outline"
+              className="mb-4 border-orange-600 text-orange-600"
+            >
               Contacto
             </Badge>
             <h2 className="text-3xl sm:text-4xl font-black tracking-tight mb-4">
               <span className="text-orange-600">Cotiza</span> tu Proyecto
             </h2>
             <p className="text-muted-foreground text-lg max-w-xl mx-auto">
-              Llena el formulario o escribenos directamente por WhatsApp para una
-              cotizacion personalizada y rapida.
+              Llena el formulario o escribenos directamente por WhatsApp para
+              una cotizacion personalizada y rapida.
             </p>
           </motion.div>
           <div className="grid lg:grid-cols-2 gap-12 max-w-5xl mx-auto">
-            {/* Contact Form */}
             <motion.div {...fadeInUp}>
               <Card>
                 <CardHeader>
@@ -896,14 +947,13 @@ export default function Home() {
                   </Button>
                   {items.length > 0 && (
                     <p className="text-sm text-muted-foreground text-center">
-                      Se incluiran los {totalItems} productos seleccionados en tu
-                      mensaje
+                      Se incluiran los {totalItems} productos seleccionados en
+                      tu mensaje
                     </p>
                   )}
                 </CardContent>
               </Card>
             </motion.div>
-            {/* Contact Info */}
             <motion.div {...fadeInUp} className="space-y-6">
               <Card className="border-orange-200 bg-orange-50">
                 <CardHeader>
@@ -944,7 +994,7 @@ export default function Home() {
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <Mail className="h-5 w-5 text-orange-600" />
+                    <Truck className="h-5 w-5 text-orange-600" />
                     Vehiculos que Trabajamos
                   </CardTitle>
                 </CardHeader>
@@ -962,11 +1012,7 @@ export default function Home() {
                       "Mahindra",
                       "Cherokee",
                     ].map((v) => (
-                      <Badge
-                        key={v}
-                        variant="secondary"
-                        className="text-xs"
-                      >
+                      <Badge key={v} variant="secondary" className="text-xs">
                         {v}
                       </Badge>
                     ))}
@@ -1011,7 +1057,6 @@ export default function Home() {
       <footer className="bg-black text-white py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-            {/* Brand */}
             <div className="space-y-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-orange-600 flex items-center justify-center">
@@ -1066,117 +1111,48 @@ export default function Home() {
                 </button>
               </div>
             </div>
-            {/* Products */}
             <div>
               <h4 className="font-bold mb-4">Productos</h4>
               <ul className="space-y-2 text-gray-400 text-sm">
-                <li>
-                  <button
-                    onClick={() => {
-                      setActiveCategory("Bumpers");
-                      scrollToSection("productos");
-                    }}
-                    className="hover:text-orange-500 transition-colors"
-                  >
-                    Bumpers Off-Road
-                  </button>
-                </li>
-                <li>
-                  <button
-                    onClick={() => {
-                      setActiveCategory("Suspension");
-                      scrollToSection("productos");
-                    }}
-                    className="hover:text-orange-500 transition-colors"
-                  >
-                    Kits de Suspension
-                  </button>
-                </li>
-                <li>
-                  <button
-                    onClick={() => {
-                      setActiveCategory("Estructuras");
-                      scrollToSection("productos");
-                    }}
-                    className="hover:text-orange-500 transition-colors"
-                  >
-                    Bovedas y Trapecios
-                  </button>
-                </li>
-                <li>
-                  <button
-                    onClick={() => {
-                      setActiveCategory("Estribos");
-                      scrollToSection("productos");
-                    }}
-                    className="hover:text-orange-500 transition-colors"
-                  >
-                    Estribos
-                  </button>
-                </li>
-                <li>
-                  <button
-                    onClick={() => {
-                      setActiveCategory("Iluminacion");
-                      scrollToSection("productos");
-                    }}
-                    className="hover:text-orange-500 transition-colors"
-                  >
-                    Iluminacion LED
-                  </button>
-                </li>
-                <li>
-                  <button
-                    onClick={() => {
-                      setActiveCategory("Proteccion");
-                      scrollToSection("productos");
-                    }}
-                    className="hover:text-orange-500 transition-colors"
-                  >
-                    Proteccion de Chasis
-                  </button>
-                </li>
+                {[
+                  "Bumpers Off-Road",
+                  "Kits de Suspension",
+                  "Bovedas y Trapecios",
+                  "Estribos",
+                  "Iluminacion LED",
+                  "Proteccion de Chasis",
+                ].map((item) => (
+                  <li key={item}>
+                    <button
+                      onClick={() => scrollToSection("productos")}
+                      className="hover:text-orange-500 transition-colors"
+                    >
+                      {item}
+                    </button>
+                  </li>
+                ))}
               </ul>
             </div>
-            {/* Quick Links */}
             <div>
               <h4 className="font-bold mb-4">Enlaces Rapidos</h4>
               <ul className="space-y-2 text-gray-400 text-sm">
-                <li>
-                  <button
-                    onClick={() => scrollToSection("hero")}
-                    className="hover:text-orange-500 transition-colors"
-                  >
-                    Inicio
-                  </button>
-                </li>
-                <li>
-                  <button
-                    onClick={() => scrollToSection("productos")}
-                    className="hover:text-orange-500 transition-colors"
-                  >
-                    Catalogo
-                  </button>
-                </li>
-                <li>
-                  <button
-                    onClick={() => scrollToSection("nosotros")}
-                    className="hover:text-orange-500 transition-colors"
-                  >
-                    Nosotros
-                  </button>
-                </li>
-                <li>
-                  <button
-                    onClick={() => scrollToSection("contacto")}
-                    className="hover:text-orange-500 transition-colors"
-                  >
-                    Contacto
-                  </button>
-                </li>
+                {[
+                  { label: "Inicio", id: "hero" },
+                  { label: "Catalogo", id: "productos" },
+                  { label: "Nosotros", id: "nosotros" },
+                  { label: "Contacto", id: "contacto" },
+                ].map((item) => (
+                  <li key={item.id}>
+                    <button
+                      onClick={() => scrollToSection(item.id)}
+                      className="hover:text-orange-500 transition-colors"
+                    >
+                      {item.label}
+                    </button>
+                  </li>
+                ))}
               </ul>
             </div>
-            {/* Contact */}
             <div>
               <h4 className="font-bold mb-4">Contacto</h4>
               <ul className="space-y-3 text-gray-400 text-sm">
@@ -1335,7 +1311,8 @@ export default function Home() {
                 onClick={handleSendMessage}
               >
                 <MessageCircle className="h-5 w-5 mr-2" />
-                Cotizar {totalItems} producto{totalItems > 1 ? "s" : ""} por WhatsApp
+                Cotizar {totalItems} producto
+                {totalItems > 1 ? "s" : ""} por WhatsApp
               </Button>
               <Button
                 variant="outline"
@@ -1420,6 +1397,71 @@ export default function Home() {
           </motion.div>
         </div>
       )}
+
+      {/* ==================== LOGIN DIALOG ==================== */}
+      <Dialog open={showLoginDialog} onOpenChange={setShowLoginDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Lock className="h-5 w-5 text-orange-600" />
+              Acceso Administrador
+            </DialogTitle>
+            <DialogDescription>
+              Ingresa la contrasena para acceder al panel de administracion de
+              productos.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">
+                Contrasena
+              </label>
+              <Input
+                type="password"
+                placeholder="Ingresa la contrasena de admin"
+                value={loginPassword}
+                onChange={(e) => {
+                  setLoginPassword(e.target.value);
+                  setLoginError("");
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleLogin();
+                }}
+              />
+              {loginError && (
+                <p className="text-sm text-destructive mt-1.5">{loginError}</p>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground bg-gray-50 rounded-lg p-3">
+              Contrasena por defecto: <code className="font-mono bg-gray-200 px-1 rounded">okinnovation2024</code>
+              <br />
+              Puedes cambiarla con la variable de entorno ADMIN_PASSWORD
+            </p>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setShowLoginDialog(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleLogin}
+              disabled={loginLoading || !loginPassword}
+              className="bg-orange-600 hover:bg-orange-700 text-white"
+            >
+              {loginLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Verificando...
+                </>
+              ) : (
+                <>
+                  <Lock className="h-4 w-4 mr-2" />
+                  Ingresar
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
